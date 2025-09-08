@@ -190,8 +190,10 @@ mod test {
 
     #[test]
     fn can_move_cursor() {
-        let mut app = App::default();
-        app.current_dir_contents = vec![PathBuf::from("a"), PathBuf::from("b")];
+        let mut app = App {
+            current_dir_contents: vec![PathBuf::from("a"), PathBuf::from("b"), PathBuf::from("c")],
+            ..Default::default()
+        };
 
         assert_eq!(app.cursor_position, 0);
 
@@ -204,8 +206,10 @@ mod test {
 
     #[test]
     fn can_cursor_wraps_around() {
-        let mut app = App::default();
-        app.current_dir_contents = vec![PathBuf::from("a"), PathBuf::from("b"), PathBuf::from("c")];
+        let mut app = App {
+            current_dir_contents: vec![PathBuf::from("a"), PathBuf::from("b"), PathBuf::from("c")],
+            ..Default::default()
+        };
 
         assert_eq!(app.cursor_position, 0);
 
