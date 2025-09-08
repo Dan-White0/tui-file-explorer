@@ -159,8 +159,8 @@ impl App {
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let title = Line::from(" TUI File Explorer ");
-
-        let lines: Vec<Line> = self.get_formatted_path();
+        let mut lines = vec![Line::from(self.current_dir_path.to_str().unwrap())];
+        lines.extend(self.get_formatted_path());
 
         let text = Text::from(lines);
 
