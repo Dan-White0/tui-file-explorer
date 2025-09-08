@@ -100,27 +100,35 @@ impl App {
 
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let title = Line::from(" TUI File Explorer");
+        let title = Line::from(" TUI File Explorer ");
 
-        let mut lines = Vec::new();
-        for (index, entity) in self.current_dir_contents.iter().enumerate() {
-            let prefix = if index == self.cursor_position {
-                "> "
-            } else {
-                "  "
-            };
-            if entity.is_dir() {
-                lines.push(Line::from(format!("{}{}", prefix, entity.to_str().unwrap())).blue());
-            } else if entity.is_file() {
-                lines.push(Line::from(format!("{}{}", prefix, entity.to_str().unwrap())).yellow());
-            } else {
-                lines.push(Line::from(format!(
-                    "{}{}",
-                    prefix,
-                    entity.to_str().unwrap()
-                )));
-            }
-        }
+        let lines: Vec<Line> = self
+            .current_dir_contents
+            .iter()
+            .enumerate()
+            .map(|(index, entity)| {
+                let prefix = if index == self.cursor_position {
+                    "> "
+                } else {
+                    "  "
+                };
+
+                let name = entity
+                    .file_name()
+                    .and_then(|os_str| os_str.to_str())
+                    .unwrap_or("<invalid utf-8>");
+
+                let text = format!("{prefix}{name}");
+
+                if entity.is_dir() {
+                    Line::from(text).blue()
+                } else if entity.is_file() {
+                    Line::from(text).yellow()
+                } else {
+                    Line::from(text)
+                }
+            })
+            .collect();
 
         let text = Text::from(lines);
 
