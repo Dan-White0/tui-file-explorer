@@ -1,4 +1,7 @@
-use std::{io, path::PathBuf};
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -96,39 +99,40 @@ impl App {
             self.cursor_position -= 1;
         }
     }
+
+    fn get_formatted_path(&self) -> Vec<Line<'static>> {
+        self.current_dir_contents
+            .iter()
+            .enumerate()
+            .map(|(index, entity)| Self::format_path(entity, index == self.cursor_position))
+            .collect()
+    }
+
+    fn format_path(entity: &Path, is_selected: bool) -> Line<'static> {
+        let prefix = if is_selected { "> " } else { "  " };
+
+        let name = entity
+            .file_name()
+            .and_then(|os_str| os_str.to_str())
+            .unwrap_or("<invalid utf-8>");
+
+        let text = format!("{prefix}{name}");
+
+        if entity.is_dir() {
+            Line::from(text).blue()
+        } else if entity.is_file() {
+            Line::from(text).yellow()
+        } else {
+            Line::from(text)
+        }
+    }
 }
 
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let title = Line::from(" TUI File Explorer ");
 
-        let lines: Vec<Line> = self
-            .current_dir_contents
-            .iter()
-            .enumerate()
-            .map(|(index, entity)| {
-                let prefix = if index == self.cursor_position {
-                    "> "
-                } else {
-                    "  "
-                };
-
-                let name = entity
-                    .file_name()
-                    .and_then(|os_str| os_str.to_str())
-                    .unwrap_or("<invalid utf-8>");
-
-                let text = format!("{prefix}{name}");
-
-                if entity.is_dir() {
-                    Line::from(text).blue()
-                } else if entity.is_file() {
-                    Line::from(text).yellow()
-                } else {
-                    Line::from(text)
-                }
-            })
-            .collect();
+        let lines: Vec<Line> = self.get_formatted_path();
 
         let text = Text::from(lines);
 
