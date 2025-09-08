@@ -24,6 +24,7 @@ fn main() -> io::Result<()> {
 #[derive(Debug, Default)]
 struct App {
     exit: bool,
+    current_dir_path: PathBuf,
     current_dir_contents: Vec<PathBuf>,
     cursor_position: usize,
 }
@@ -76,8 +77,18 @@ impl App {
             KeyCode::Up => {
                 self.move_cursor_up();
             }
+            KeyCode::Right if self.currently_on_dir() => {
+                self.go_into_dir();
+            }
+            KeyCode::Left => {
+                self.go_out_of_dir();
+            }
             _ => {}
         }
+    }
+
+    fn currently_on_dir(&self) -> bool {
+        self.current_dir_contents[self.cursor_position].is_dir()
     }
 
     fn exit(&mut self) {
@@ -98,6 +109,27 @@ impl App {
         } else {
             self.cursor_position -= 1;
         }
+    }
+
+    fn go_into_dir(&mut self) {
+        self.current_dir_path
+            .push(&self.current_dir_contents[self.cursor_position]);
+        self.update_current_dir_contents();
+    }
+
+    fn go_out_of_dir(&mut self) {
+        self.current_dir_path.pop();
+        self.update_current_dir_contents();
+    }
+
+    fn update_current_dir_contents(&mut self) {
+        self.current_dir_contents = std::fs::read_dir(&self.current_dir_path)
+            .unwrap()
+            .filter_map(|maybe_dir_entry| {
+                let dir_entry = maybe_dir_entry.ok()?;
+                Some(dir_entry.path())
+            })
+            .collect();
     }
 
     fn get_formatted_path(&self) -> Vec<Line<'static>> {
