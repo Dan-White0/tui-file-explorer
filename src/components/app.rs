@@ -174,3 +174,45 @@ impl Widget for &App {
             .render(area, buf);
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn can_exit() {
+        let mut app = App::default();
+        assert!(!app.exit);
+
+        app.handle_key_event(KeyCode::Char('q').into());
+        assert!(app.exit);
+    }
+
+    #[test]
+    fn can_move_cursor() {
+        let mut app = App::default();
+        app.current_dir_contents = vec![PathBuf::from("a"), PathBuf::from("b")];
+
+        assert_eq!(app.cursor_position, 0);
+
+        app.handle_key_event(KeyCode::Down.into());
+        assert_eq!(app.cursor_position, 1);
+
+        app.handle_key_event(KeyCode::Up.into());
+        assert_eq!(app.cursor_position, 0);
+    }
+
+    #[test]
+    fn can_cursor_wraps_around() {
+        let mut app = App::default();
+        app.current_dir_contents = vec![PathBuf::from("a"), PathBuf::from("b"), PathBuf::from("c")];
+
+        assert_eq!(app.cursor_position, 0);
+
+        app.handle_key_event(KeyCode::Up.into());
+        assert_eq!(app.cursor_position, 2);
+
+        app.handle_key_event(KeyCode::Down.into());
+        assert_eq!(app.cursor_position, 0);
+    }
+}
