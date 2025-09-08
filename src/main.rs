@@ -1,5 +1,5 @@
 use std::{
-    io,
+    env, io,
     path::{Path, PathBuf},
 };
 
@@ -31,7 +31,9 @@ struct App {
 
 impl App {
     fn new() -> Self {
-        let current_dir_contents = std::fs::read_dir("./")
+        let current_dir_path = env::current_dir().unwrap();
+
+        let current_dir_contents = std::fs::read_dir(&current_dir_path)
             .unwrap()
             .filter_map(|maybe_dir_entry| {
                 let dir_entry = maybe_dir_entry.ok()?;
@@ -41,6 +43,7 @@ impl App {
 
         App {
             current_dir_contents,
+            current_dir_path,
             ..Default::default()
         }
     }
