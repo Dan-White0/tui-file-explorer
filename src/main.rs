@@ -1,10 +1,11 @@
-use std::io;
+use std::{io, path::PathBuf};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
     layout::Rect,
+    style::Stylize,
     symbols::border,
     text::{Line, Text},
     widgets::{Block, Paragraph, Widget},
@@ -20,7 +21,7 @@ fn main() -> io::Result<()> {
 #[derive(Debug, Default)]
 struct App {
     exit: bool,
-    current_dir_contents: Vec<String>,
+    current_dir_contents: Vec<PathBuf>,
     cursor_position: usize,
 }
 
@@ -30,10 +31,7 @@ impl App {
             .unwrap()
             .filter_map(|maybe_dir_entry| {
                 let dir_entry = maybe_dir_entry.ok()?;
-                let path_buf = dir_entry.path();
-                let file_name = path_buf.file_name()?;
-                let string = file_name.to_str()?;
-                Some(string.to_string())
+                Some(dir_entry.path())
             })
             .collect();
 
@@ -111,7 +109,17 @@ impl Widget for &App {
             } else {
                 "  "
             };
-            lines.push(Line::from(format!("{}{}", prefix, entity.clone())));
+            if entity.is_dir() {
+                lines.push(Line::from(format!("{}{}", prefix, entity.to_str().unwrap())).blue());
+            } else if entity.is_file() {
+                lines.push(Line::from(format!("{}{}", prefix, entity.to_str().unwrap())).yellow());
+            } else {
+                lines.push(Line::from(format!(
+                    "{}{}",
+                    prefix,
+                    entity.to_str().unwrap()
+                )));
+            }
         }
 
         let text = Text::from(lines);
