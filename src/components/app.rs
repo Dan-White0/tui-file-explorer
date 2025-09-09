@@ -19,7 +19,8 @@ pub struct App {
     exit: bool,
     current_dir_path: PathBuf,
     current_dir_contents: Vec<PathBuf>,
-    cursor_position: usize,
+    cursor_positions: Vec<usize>,
+    current_cursor_depth: usize,
 }
 
 impl App {
@@ -32,9 +33,14 @@ impl App {
             })
             .collect();
 
+        let current_cursor_depth = current_dir_path.ancestors().count() - 1;
+        let cursor_positions = vec![0; current_cursor_depth + 1];
+
         App {
             current_dir_contents,
             current_dir_path,
+            cursor_positions,
+            current_cursor_depth,
             ..Default::default()
         }
     }
@@ -82,7 +88,11 @@ impl App {
     }
 
     fn currently_on_dir(&self) -> bool {
-        self.current_dir_contents[self.cursor_position].is_dir()
+        self.current_dir_contents[self.current_cursor_position()].is_dir()
+    }
+
+    fn current_cursor_position(&self) -> usize {
+        self.cursor_positions[self.current_cursor_depth]
     }
 
     fn exit(&mut self) {
@@ -90,32 +100,35 @@ impl App {
     }
 
     fn move_cursor_down(&mut self) {
-        if self.cursor_position == self.current_dir_contents.len() - 1 {
-            self.cursor_position = 0;
+        if self.current_cursor_position() == self.current_dir_contents.len() - 1 {
+            self.cursor_positions[self.current_cursor_depth] = 0;
         } else {
-            self.cursor_position += 1;
+            self.cursor_positions[self.current_cursor_depth] += 1;
         }
     }
 
     fn move_cursor_up(&mut self) {
-        if self.cursor_position == 0 {
-            self.cursor_position = self.current_dir_contents.len() - 1;
+        if self.current_cursor_position() == 0 {
+            self.cursor_positions[self.current_cursor_depth] = self.current_dir_contents.len() - 1;
         } else {
-            self.cursor_position -= 1;
+            self.cursor_positions[self.current_cursor_depth] -= 1;
         }
     }
 
     fn go_into_dir(&mut self) {
         self.current_dir_path
-            .push(&self.current_dir_contents[self.cursor_position]);
+            .push(&self.current_dir_contents[self.current_cursor_position()]);
         self.update_current_dir_contents();
-        self.cursor_position = 0;
+        self.current_cursor_depth += 1;
+        if self.current_cursor_depth >= self.cursor_positions.len() {
+            self.cursor_positions.push(0);
+        }
     }
 
     fn go_out_of_dir(&mut self) {
         self.current_dir_path.pop();
         self.update_current_dir_contents();
-        self.cursor_position = 0;
+        self.current_cursor_depth -= 1;
     }
 
     fn update_current_dir_contents(&mut self) {
@@ -132,7 +145,9 @@ impl App {
         self.current_dir_contents
             .iter()
             .enumerate()
-            .map(|(index, entity)| Self::format_path(entity, index == self.cursor_position))
+            .map(|(index, entity)| {
+                Self::format_path(entity, index == self.current_cursor_position())
+            })
             .collect()
     }
 
@@ -195,32 +210,36 @@ mod test {
     fn can_move_cursor() {
         let mut app = App {
             current_dir_contents: vec![PathBuf::from("a"), PathBuf::from("b"), PathBuf::from("c")],
+            current_dir_path: PathBuf::from("./"),
+            cursor_positions: vec![0],
             ..Default::default()
         };
 
-        assert_eq!(app.cursor_position, 0);
+        assert_eq!(app.current_cursor_position(), 0);
 
         app.handle_key_event(KeyCode::Down.into());
-        assert_eq!(app.cursor_position, 1);
+        assert_eq!(app.current_cursor_position(), 1);
 
         app.handle_key_event(KeyCode::Up.into());
-        assert_eq!(app.cursor_position, 0);
+        assert_eq!(app.current_cursor_position(), 0);
     }
 
     #[test]
     fn can_cursor_wraps_around() {
         let mut app = App {
             current_dir_contents: vec![PathBuf::from("a"), PathBuf::from("b"), PathBuf::from("c")],
+            current_dir_path: PathBuf::from("./"),
+            cursor_positions: vec![0],
             ..Default::default()
         };
 
-        assert_eq!(app.cursor_position, 0);
+        assert_eq!(app.current_cursor_position(), 0);
 
         app.handle_key_event(KeyCode::Up.into());
-        assert_eq!(app.cursor_position, 2);
+        assert_eq!(app.current_cursor_position(), 2);
 
         app.handle_key_event(KeyCode::Down.into());
-        assert_eq!(app.cursor_position, 0);
+        assert_eq!(app.current_cursor_position(), 0);
     }
 
     #[test]
@@ -233,12 +252,13 @@ mod test {
         let _tmp_file = File::create(&file_path).unwrap();
 
         let mut app = App::new(tmp_dir.path().to_path_buf());
+
         assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
         assert_eq!(
             app.current_dir_contents,
             vec![file_path.clone(), nested_dir_path.clone()]
         );
-        assert_eq!(app.cursor_position, 0);
+        assert_eq!(app.current_cursor_position(), 0);
 
         // Current dir does not change when attempting to enter file
         app.handle_key_event(KeyCode::Right.into());
@@ -247,14 +267,14 @@ mod test {
             app.current_dir_contents,
             vec![file_path.clone(), nested_dir_path.clone()]
         );
-        assert_eq!(app.cursor_position, 0);
+        assert_eq!(app.current_cursor_position(), 0);
 
         // But does change if entering dir
         app.handle_key_event(KeyCode::Down.into());
-        assert_eq!(app.cursor_position, 1);
+        assert_eq!(app.current_cursor_position(), 1);
         assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
         app.handle_key_event(KeyCode::Right.into());
-        assert_eq!(app.cursor_position, 0);
+        assert_eq!(app.current_cursor_position(), 0);
         assert_eq!(app.current_dir_path, nested_dir_path);
     }
 
@@ -277,7 +297,7 @@ mod test {
             app.current_dir_contents,
             vec![nested_file_path_0.clone(), nested_file_path_1.clone()]
         );
-        assert_eq!(app.cursor_position, 0);
+        assert_eq!(app.current_cursor_position(), 0);
 
         // Go up a dir when left key pressed
         app.handle_key_event(KeyCode::Down.into());
@@ -286,13 +306,43 @@ mod test {
             app.current_dir_contents,
             vec![nested_file_path_0.clone(), nested_file_path_1.clone()]
         );
-        assert_eq!(app.cursor_position, 1);
+        assert_eq!(app.current_cursor_position(), 1);
 
         app.handle_key_event(KeyCode::Left.into());
-        assert_eq!(app.cursor_position, 0);
+        assert_eq!(app.current_cursor_position(), 0);
         assert_eq!(
             app.current_dir_contents,
             vec![file_path.clone(), nested_dir_path.clone()]
         );
+    }
+
+    #[test]
+    fn cursor_position_retained_after_entering_then_exiting_dir() {
+        let tmp_dir = TempDir::new("tmp_dir").unwrap();
+        let nested_dir_path =
+            PathBuf::from(format!("{}/nested_dir", tmp_dir.path().to_str().unwrap()));
+        let _nested_dir = create_dir(&nested_dir_path);
+        let file_path = tmp_dir.path().join("file.txt");
+        let _tmp_file = File::create(&file_path).unwrap();
+
+        let mut app = App::new(tmp_dir.path().to_path_buf());
+
+        assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
+        assert_eq!(app.current_cursor_position(), 0);
+
+        // Change cursor position to 1
+        app.handle_key_event(KeyCode::Down.into());
+        assert_eq!(app.current_cursor_position(), 1);
+        assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
+
+        // Entering directory sets cursor position to 0, as this is the first time entering
+        app.handle_key_event(KeyCode::Right.into());
+        assert_eq!(app.current_cursor_position(), 0);
+        assert_eq!(app.current_dir_path, nested_dir_path);
+
+        // Exiting directory sets cursor position back to 1
+        app.handle_key_event(KeyCode::Left.into());
+        assert_eq!(app.current_cursor_position(), 1);
+        assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
     }
 }
