@@ -1,5 +1,5 @@
 use std::{
-    env, io,
+    io,
     path::{Path, PathBuf},
 };
 
@@ -23,9 +23,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> Self {
-        let current_dir_path = env::current_dir().unwrap();
-
+    pub fn new(current_dir_path: PathBuf) -> Self {
         let current_dir_contents = std::fs::read_dir(&current_dir_path)
             .unwrap()
             .filter_map(|maybe_dir_entry| {
@@ -177,7 +175,10 @@ impl Widget for &App {
 
 #[cfg(test)]
 mod test {
+    use std::fs::{self, DirBuilder, File, create_dir};
+
     use super::*;
+    use tempdir::TempDir;
 
     #[test]
     fn can_exit() {
@@ -218,5 +219,39 @@ mod test {
 
         app.handle_key_event(KeyCode::Down.into());
         assert_eq!(app.cursor_position, 0);
+    }
+
+    #[test]
+    fn can_enter_dir() {
+        let tmp_dir = TempDir::new("tmp_dir").unwrap();
+        let nested_dir_path =
+            PathBuf::from(format!("{}/nested_dir", tmp_dir.path().to_str().unwrap()));
+        let _nested_dir = create_dir(&nested_dir_path);
+        let file_path = tmp_dir.path().join("file.txt");
+        let _tmp_file = File::create(&file_path).unwrap();
+
+        let mut app = App::new(tmp_dir.path().to_path_buf());
+        assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
+        assert_eq!(
+            app.current_dir_contents,
+            vec![file_path.clone(), nested_dir_path.clone()]
+        );
+        assert_eq!(app.cursor_position, 0);
+
+        // Current dir does not change when attempting to enter file
+        app.handle_key_event(KeyCode::Right.into());
+        assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
+        assert_eq!(
+            app.current_dir_contents,
+            vec![file_path.clone(), nested_dir_path.clone()]
+        );
+        assert_eq!(app.cursor_position, 0);
+
+        // But does change if entering dir
+        app.handle_key_event(KeyCode::Down.into());
+        assert_eq!(app.cursor_position, 1);
+        assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
+        app.handle_key_event(KeyCode::Right.into());
+        assert_eq!(app.current_dir_path, nested_dir_path);
     }
 }
