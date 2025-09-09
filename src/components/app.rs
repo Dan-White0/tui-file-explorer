@@ -115,6 +115,7 @@ impl App {
     fn go_out_of_dir(&mut self) {
         self.current_dir_path.pop();
         self.update_current_dir_contents();
+        self.cursor_position = 0;
     }
 
     fn update_current_dir_contents(&mut self) {
@@ -255,5 +256,43 @@ mod test {
         app.handle_key_event(KeyCode::Right.into());
         assert_eq!(app.cursor_position, 0);
         assert_eq!(app.current_dir_path, nested_dir_path);
+    }
+
+    #[test]
+    fn can_exit_dir() {
+        let tmp_dir = TempDir::new("tmp_dir").unwrap();
+        let file_path = tmp_dir.path().join("file.txt");
+        let _tmp_file = File::create(&file_path).unwrap();
+        let nested_dir_path =
+            PathBuf::from(format!("{}/nested_dir", tmp_dir.path().to_str().unwrap()));
+        let _nested_dir = create_dir(&nested_dir_path);
+        let nested_file_path_0 = nested_dir_path.join("file_a.txt");
+        let nested_file_path_1 = nested_dir_path.join("file_b.txt");
+        let _nested_file_0 = File::create(&nested_file_path_0).unwrap();
+        let _nested_file_1 = File::create(&nested_file_path_1).unwrap();
+
+        let mut app = App::new(nested_dir_path.clone());
+        assert_eq!(app.current_dir_path, nested_dir_path);
+        assert_eq!(
+            app.current_dir_contents,
+            vec![nested_file_path_0.clone(), nested_file_path_1.clone()]
+        );
+        assert_eq!(app.cursor_position, 0);
+
+        // Go up a dir when left key pressed
+        app.handle_key_event(KeyCode::Down.into());
+        assert_eq!(app.current_dir_path, nested_dir_path);
+        assert_eq!(
+            app.current_dir_contents,
+            vec![nested_file_path_0.clone(), nested_file_path_1.clone()]
+        );
+        assert_eq!(app.cursor_position, 1);
+
+        app.handle_key_event(KeyCode::Left.into());
+        assert_eq!(app.cursor_position, 0);
+        assert_eq!(
+            app.current_dir_contents,
+            vec![file_path.clone(), nested_dir_path.clone()]
+        );
     }
 }
