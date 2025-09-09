@@ -109,6 +109,7 @@ impl App {
         self.current_dir_path
             .push(&self.current_dir_contents[self.cursor_position]);
         self.update_current_dir_contents();
+        self.cursor_position = 0;
     }
 
     fn go_out_of_dir(&mut self) {
@@ -175,7 +176,7 @@ impl Widget for &App {
 
 #[cfg(test)]
 mod test {
-    use std::fs::{self, DirBuilder, File, create_dir};
+    use std::fs::{File, create_dir};
 
     use super::*;
     use tempdir::TempDir;
@@ -252,6 +253,7 @@ mod test {
         assert_eq!(app.cursor_position, 1);
         assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
         app.handle_key_event(KeyCode::Right.into());
+        assert_eq!(app.cursor_position, 0);
         assert_eq!(app.current_dir_path, nested_dir_path);
     }
 }
