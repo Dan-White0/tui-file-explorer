@@ -129,6 +129,7 @@ impl App {
         self.current_dir_path.pop();
         self.update_current_dir_contents();
         self.current_cursor_depth -= 1;
+        self.cursor_positions.pop();
     }
 
     fn update_current_dir_contents(&mut self) {
@@ -344,5 +345,60 @@ mod test {
         app.handle_key_event(KeyCode::Left.into());
         assert_eq!(app.current_cursor_position(), 1);
         assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
+    }
+
+    #[test]
+    fn entering_a_new_sub_directory_starts_cursor_position_at_0() {
+        let tmp_dir = TempDir::new("tmp_dir").unwrap();
+        let nested_dir_path_0 =
+            PathBuf::from(format!("{}/nested_dir_0", tmp_dir.path().to_str().unwrap()));
+        let nested_dir_path_1 =
+            PathBuf::from(format!("{}/nested_dir_1", tmp_dir.path().to_str().unwrap()));
+        let _nested_dir_0 = create_dir(&nested_dir_path_0);
+        let _nested_dir_1 = create_dir(&nested_dir_path_1);
+
+        let nested_file_path_0 = nested_dir_path_0.join("file_a.txt");
+        let nested_file_path_1 = nested_dir_path_0.join("file_b.txt");
+        let _nested_file_0 = File::create(&nested_file_path_0).unwrap();
+        let _nested_file_1 = File::create(&nested_file_path_1).unwrap();
+
+        let mut app = App::new(tmp_dir.path().to_path_buf());
+
+        assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
+        assert_eq!(app.current_cursor_position(), 0);
+
+        // Entering directory sets cursor position to 0, as this is the first time entering
+        app.handle_key_event(KeyCode::Right.into());
+        assert_eq!(app.current_cursor_position(), 0);
+        assert_eq!(app.current_dir_path, nested_dir_path_0);
+
+        // Can change this directories cursor position
+        app.handle_key_event(KeyCode::Down.into());
+        assert_eq!(app.current_cursor_position(), 1);
+
+        // Exiting directory sets cursor position back to 0
+        app.handle_key_event(KeyCode::Left.into());
+        assert_eq!(app.current_cursor_position(), 0);
+        assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
+
+        // Move cursor to other directory
+        app.handle_key_event(KeyCode::Down.into());
+        assert_eq!(app.current_cursor_position(), 1);
+
+        // Go into this new directory
+        app.handle_key_event(KeyCode::Right.into());
+        assert_eq!(app.current_cursor_position(), 0);
+        assert_eq!(app.current_dir_path, nested_dir_path_1);
+
+        // Exiting directory again sets cursor position back to 1
+        app.handle_key_event(KeyCode::Left.into());
+        assert_eq!(app.current_cursor_position(), 1);
+        assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
+
+        // Entering first sub directory and cursor position is 0
+        app.handle_key_event(KeyCode::Up.into());
+        app.handle_key_event(KeyCode::Right.into());
+        assert_eq!(app.current_cursor_position(), 0);
+        assert_eq!(app.current_dir_path, nested_dir_path_0);
     }
 }
