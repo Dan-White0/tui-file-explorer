@@ -174,7 +174,7 @@ impl App {
 
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let title = Line::from(" TUI File Explorer ");
+        let title = Line::from(" TUI File Explorer ".bold());
         let mut lines = vec![Line::from(self.current_dir_path.to_str().unwrap())];
         lines.extend(self.get_formatted_path());
 
@@ -195,8 +195,10 @@ impl Widget for &App {
 mod test {
     use std::fs::{File, create_dir};
 
-    use super::*;
+    use ratatui::style::Style;
     use tempdir::TempDir;
+
+    use super::*;
 
     #[test]
     fn can_exit() {
@@ -400,5 +402,45 @@ mod test {
         app.handle_key_event(KeyCode::Right.into());
         assert_eq!(app.current_cursor_position(), 0);
         assert_eq!(app.current_dir_path, nested_dir_path_0);
+    }
+
+    #[test]
+    fn default_render() {
+        // TODO: Make this test nicer
+        let tmp_dir = TempDir::new("tmp_dir").unwrap();
+        let nested_dir_path =
+            PathBuf::from(format!("{}/nested_dir", tmp_dir.path().to_str().unwrap()));
+        let _nested_dir = create_dir(&nested_dir_path);
+        let file_path = tmp_dir.path().join("file.txt");
+        let _tmp_file = File::create(&file_path).unwrap();
+
+        let app = App::new(tmp_dir.path().to_path_buf());
+
+        let mut buf = Buffer::empty(Rect::new(0, 0, 81, 5));
+
+        app.render(buf.area, &mut buf);
+
+        let mut expected = Buffer::with_lines(vec![
+            "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ TUI File Explorer ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓",
+            &format!("┃{:width$}┃", tmp_dir.path().to_str().unwrap(), width = 79),
+            "┃> file.txt                                                                     ┃",
+            "┃  nested_dir                                                                   ┃",
+            "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛",
+        ]);
+        let title_style = Style::new().bold();
+        let current_dir_style = Style::new();
+        let file_style = Style::new().yellow();
+        let dir_style = Style::new().blue();
+
+        let temp_dir_absolute_path_length = tmp_dir.path().to_str().unwrap().len() as u16;
+        expected.set_style(Rect::new(31, 0, 19, 1), title_style);
+        expected.set_style(
+            Rect::new(1, 1, 1 + temp_dir_absolute_path_length, 1),
+            current_dir_style,
+        );
+        expected.set_style(Rect::new(1, 2, 10, 1), file_style);
+        expected.set_style(Rect::new(1, 3, 12, 1), dir_style);
+
+        assert_eq!(buf, expected);
     }
 }
