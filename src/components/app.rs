@@ -1,3 +1,4 @@
+use itertools::sorted;
 use std::{
     io,
     path::{Path, PathBuf},
@@ -25,13 +26,15 @@ pub struct App {
 
 impl App {
     pub fn new(current_dir_path: PathBuf) -> Self {
-        let current_dir_contents = std::fs::read_dir(&current_dir_path)
-            .unwrap()
-            .filter_map(|maybe_dir_entry| {
-                let dir_entry = maybe_dir_entry.ok()?;
-                Some(dir_entry.path())
-            })
-            .collect();
+        let current_dir_contents = sorted(
+            std::fs::read_dir(&current_dir_path)
+                .unwrap()
+                .filter_map(|maybe_dir_entry| {
+                    let dir_entry = maybe_dir_entry.ok()?;
+                    Some(dir_entry.path())
+                }),
+        )
+        .collect();
 
         let current_cursor_depth = current_dir_path.ancestors().count() - 1;
         let cursor_positions = vec![0; current_cursor_depth + 1];
@@ -133,13 +136,15 @@ impl App {
     }
 
     fn update_current_dir_contents(&mut self) {
-        self.current_dir_contents = std::fs::read_dir(&self.current_dir_path)
-            .unwrap()
-            .filter_map(|maybe_dir_entry| {
-                let dir_entry = maybe_dir_entry.ok()?;
-                Some(dir_entry.path())
-            })
-            .collect();
+        self.current_dir_contents = sorted(
+            std::fs::read_dir(&self.current_dir_path)
+                .unwrap()
+                .filter_map(|maybe_dir_entry| {
+                    let dir_entry = maybe_dir_entry.ok()?;
+                    Some(dir_entry.path())
+                }),
+        )
+        .collect();
     }
 
     fn get_formatted_path(&self) -> Vec<Line<'static>> {
