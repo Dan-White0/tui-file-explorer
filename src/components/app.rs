@@ -8,7 +8,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     style::Stylize,
     symbols::border,
     text::{Line, Text},
@@ -98,6 +98,14 @@ impl App {
         self.cursor_positions[self.current_cursor_depth]
     }
 
+    fn current_cursor_column_and_row(&self, column_height: usize) -> (usize, usize) {
+        let current_cursor_pos = self.cursor_positions[self.current_cursor_depth];
+        (
+            current_cursor_pos / column_height,
+            current_cursor_pos % column_height,
+        )
+    }
+
     fn exit(&mut self) {
         self.exit = true;
     }
@@ -147,52 +155,133 @@ impl App {
         .collect();
     }
 
-    fn get_formatted_path(&self) -> Vec<Line<'static>> {
+    fn get_dir_contents_as_columns(&self, column_height: u16) -> Vec<Vec<PathBuf>> {
         self.current_dir_contents
-            .iter()
-            .enumerate()
-            .map(|(index, entity)| {
-                Self::format_path(entity, index == self.current_cursor_position())
-            })
+            .chunks(column_height as usize)
+            .map(|chunk| chunk.to_vec())
             .collect()
-    }
-
-    fn format_path(entity: &Path, is_selected: bool) -> Line<'static> {
-        let prefix = if is_selected { "> " } else { "  " };
-
-        let name = entity
-            .file_name()
-            .and_then(|os_str| os_str.to_str())
-            .unwrap_or("<invalid utf-8>");
-
-        let text = format!("{prefix}{name}");
-
-        if entity.is_dir() {
-            Line::from(text).blue()
-        } else if entity.is_file() {
-            Line::from(text).yellow()
-        } else {
-            Line::from(text)
-        }
     }
 }
 
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let title = Line::from(" TUI File Explorer ".bold());
-        let mut lines = vec![Line::from(self.current_dir_path.to_str().unwrap())];
-        lines.extend(self.get_formatted_path());
-
-        let text = Text::from(lines);
+        let dir_line = Line::from(self.current_dir_path.to_str().unwrap());
 
         let block = Block::bordered()
             .title(title.centered())
             .border_set(border::THICK);
 
-        Paragraph::new(text)
+        Paragraph::new(dir_line)
             .left_aligned()
             .block(block)
             .render(area, buf);
+
+        // Height of window, take away 2 for the border and 1 for the current dir
+        let column_height = area.height.saturating_sub(3);
+        let dir_contents_columns = self.get_dir_contents_as_columns(column_height);
+
+        let dir_contents_area = Rect {
+            x: area.x + 1,
+            y: area.y + 2,
+            width: area.width,
+            height: column_height,
+        };
+
+        let column_widths: Vec<Constraint> = dir_contents_columns
+            .iter()
+            .map(|column| {
+                Constraint::Length(
+                    (column
+                        .iter()
+                        .map(|e| e.file_name().unwrap().to_str().unwrap().len())
+                        .max()
+                        .unwrap()
+                        + 8) as u16,
+                )
+            })
+            .collect();
+
+        let columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(column_widths)
+            .split(dir_contents_area);
+
+        let (cursor_column_index, cursor_row_index) =
+            self.current_cursor_column_and_row(column_height as usize);
+
+        for (column_index, (column_area, column_contents)) in
+            columns.iter().zip(dir_contents_columns.iter()).enumerate()
+        {
+            if column_index == cursor_column_index {
+                Paragraph::new(Text::from(get_formatted_paths(
+                    column_contents,
+                    Some(cursor_row_index),
+                )))
+                .left_aligned()
+                .render(*column_area, buf);
+            } else {
+                Paragraph::new(Text::from(get_formatted_paths(column_contents, None)))
+                    .left_aligned()
+                    .render(*column_area, buf);
+            }
+        }
+    }
+}
+
+fn get_formatted_paths(
+    current_dir_contents: &[PathBuf],
+    cursor_row_index: Option<usize>,
+) -> Vec<Line<'static>> {
+    if let Some(cursor_row_index) = cursor_row_index {
+        current_dir_contents
+            .iter()
+            .enumerate()
+            .map(|(row_index, entity)| {
+                format_path_with_cursor(entity, cursor_row_index == row_index)
+            })
+            .collect()
+    } else {
+        current_dir_contents
+            .iter()
+            .map(|entity| format_path(entity))
+            .collect()
+    }
+}
+
+fn format_path(entity: &Path) -> Line<'static> {
+    let name = entity
+        .file_name()
+        .and_then(|os_str| os_str.to_str())
+        .unwrap_or("<invalid utf-8>");
+
+    let text = format!("  {name}");
+
+    if entity.is_dir() {
+        Line::from(text).blue()
+    } else if entity.is_file() {
+        Line::from(text).yellow()
+    } else {
+        Line::from(text)
+    }
+}
+
+fn format_path_with_cursor(entity: &Path, with_cursor: bool) -> Line<'static> {
+    let prefix = if with_cursor { "> " } else { "  " };
+
+    let name = entity
+        .file_name()
+        .and_then(|os_str| os_str.to_str())
+        .unwrap_or("<invalid utf-8>");
+
+    let text = format!("{prefix}{name}");
+
+    if entity.is_dir() {
+        Line::from(text).blue()
+    } else if entity.is_file() {
+        Line::from(text).yellow()
+    } else {
+        Line::from(text)
     }
 }
 
@@ -410,7 +499,7 @@ mod test {
     }
 
     #[test]
-    fn default_render() {
+    fn default_render_single_column() {
         // TODO: Make this test nicer
         let tmp_dir = TempDir::new("tmp_dir").unwrap();
         let nested_dir_path =
@@ -444,6 +533,48 @@ mod test {
             current_dir_style,
         );
         expected.set_style(Rect::new(1, 2, 10, 1), file_style);
+        expected.set_style(Rect::new(1, 3, 12, 1), dir_style);
+
+        assert_eq!(buf, expected);
+    }
+
+    #[test]
+    fn default_render_multiple_columns() {
+        let tmp_dir = TempDir::new("tmp_dir").unwrap();
+        let nested_dir_path =
+            PathBuf::from(format!("{}/nested_dir", tmp_dir.path().to_str().unwrap()));
+        let _nested_dir = create_dir(&nested_dir_path);
+        let file_path_0 = tmp_dir.path().join("file.txt");
+        let _tmp_file_0 = File::create(&file_path_0).unwrap();
+        let file_path_1 = tmp_dir.path().join("zzz.txt");
+        let _tmp_file = File::create(&file_path_1).unwrap();
+
+        let app = App::new(tmp_dir.path().to_path_buf());
+
+        let mut buf = Buffer::empty(Rect::new(0, 0, 81, 5));
+
+        app.render(buf.area, &mut buf);
+
+        let mut expected = Buffer::with_lines(vec![
+            "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ TUI File Explorer ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓",
+            &format!("┃{:width$}┃", tmp_dir.path().to_str().unwrap(), width = 79),
+            "┃> file.txt          zzz.txt                                                    ┃",
+            "┃  nested_dir                                                                   ┃",
+            "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛",
+        ]);
+        let title_style = Style::new().bold();
+        let current_dir_style = Style::new();
+        let file_style = Style::new().yellow();
+        let dir_style = Style::new().blue();
+
+        let temp_dir_absolute_path_length = tmp_dir.path().to_str().unwrap().len() as u16;
+        expected.set_style(Rect::new(31, 0, 19, 1), title_style);
+        expected.set_style(
+            Rect::new(1, 1, 1 + temp_dir_absolute_path_length, 1),
+            current_dir_style,
+        );
+        expected.set_style(Rect::new(1, 2, 10, 1), file_style);
+        expected.set_style(Rect::new(19, 2, 9, 1), file_style);
         expected.set_style(Rect::new(1, 3, 12, 1), dir_style);
 
         assert_eq!(buf, expected);
