@@ -1,8 +1,5 @@
 use itertools::sorted;
-use std::{
-    io,
-    path::{Path, PathBuf},
-};
+use std::{io, path::PathBuf};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -14,6 +11,8 @@ use ratatui::{
     text::{Line, Text},
     widgets::{Block, Paragraph, Widget},
 };
+
+use super::directory_view::get_formatted_paths;
 
 #[derive(Debug, Default)]
 pub struct App {
@@ -226,62 +225,6 @@ impl Widget for &App {
                     .render(*column_area, buf);
             }
         }
-    }
-}
-
-fn get_formatted_paths(
-    current_dir_contents: &[PathBuf],
-    cursor_row_index: Option<usize>,
-) -> Vec<Line<'static>> {
-    if let Some(cursor_row_index) = cursor_row_index {
-        current_dir_contents
-            .iter()
-            .enumerate()
-            .map(|(row_index, entity)| {
-                format_path_with_cursor(entity, cursor_row_index == row_index)
-            })
-            .collect()
-    } else {
-        current_dir_contents
-            .iter()
-            .map(|entity| format_path(entity))
-            .collect()
-    }
-}
-
-fn format_path(entity: &Path) -> Line<'static> {
-    let name = entity
-        .file_name()
-        .and_then(|os_str| os_str.to_str())
-        .unwrap_or("<invalid utf-8>");
-
-    let text = format!("  {name}");
-
-    if entity.is_dir() {
-        Line::from(text).blue()
-    } else if entity.is_file() {
-        Line::from(text).yellow()
-    } else {
-        Line::from(text)
-    }
-}
-
-fn format_path_with_cursor(entity: &Path, with_cursor: bool) -> Line<'static> {
-    let prefix = if with_cursor { "> " } else { "  " };
-
-    let name = entity
-        .file_name()
-        .and_then(|os_str| os_str.to_str())
-        .unwrap_or("<invalid utf-8>");
-
-    let text = format!("{prefix}{name}");
-
-    if entity.is_dir() {
-        Line::from(text).blue()
-    } else if entity.is_file() {
-        Line::from(text).yellow()
-    } else {
-        Line::from(text)
     }
 }
 
