@@ -5,7 +5,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect, Size},
     style::Stylize,
     symbols::border,
     text::{Line, Text},
@@ -50,7 +50,7 @@ impl App {
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         while !self.exit {
             terminal.draw(|frame| self.draw(frame))?;
-            self.handle_events()?;
+            self.handle_events(terminal.size().unwrap())?;
         }
         Ok(())
     }
@@ -59,18 +59,18 @@ impl App {
         frame.render_widget(self, frame.area());
     }
 
-    fn handle_events(&mut self) -> io::Result<()> {
+    fn handle_events(&mut self, frame_size: Size) -> io::Result<()> {
         // Blocks until an event is read
         match event::read()? {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.handle_key_event(key_event)
+                self.handle_key_event(key_event, frame_size)
             }
             _ => {}
         }
         Ok(())
     }
 
-    fn handle_key_event(&mut self, key_event: KeyEvent) {
+    fn handle_key_event(&mut self, key_event: KeyEvent, frame_size: Size) {
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
             KeyCode::Down => {
@@ -79,10 +79,16 @@ impl App {
             KeyCode::Up => {
                 self.move_cursor_up();
             }
-            KeyCode::Right if self.currently_on_dir() => {
-                self.go_into_dir();
+            KeyCode::Right => {
+                self.move_cursor_right(frame_size);
             }
             KeyCode::Left => {
+                self.move_cursor_left(frame_size);
+            }
+            KeyCode::Enter if self.currently_on_dir() => {
+                self.go_into_dir();
+            }
+            KeyCode::Backspace => {
                 self.go_out_of_dir();
             }
             _ => {}
@@ -109,6 +115,14 @@ impl App {
         self.exit = true;
     }
 
+    fn move_cursor_up(&mut self) {
+        if self.current_cursor_position() == 0 {
+            self.cursor_positions[self.current_cursor_depth] = self.current_dir_contents.len() - 1;
+        } else {
+            self.cursor_positions[self.current_cursor_depth] -= 1;
+        }
+    }
+
     fn move_cursor_down(&mut self) {
         if self.current_cursor_position() == self.current_dir_contents.len() - 1 {
             self.cursor_positions[self.current_cursor_depth] = 0;
@@ -117,11 +131,46 @@ impl App {
         }
     }
 
-    fn move_cursor_up(&mut self) {
-        if self.current_cursor_position() == 0 {
+    fn move_cursor_right(&mut self, frame_size: Size) {
+        let column_height = frame_size.height.saturating_sub(3) as usize;
+        let number_of_columns = self
+            .current_dir_contents
+            .iter()
+            .len()
+            .div_ceil(column_height);
+
+        let new_position = self.current_cursor_position() + column_height;
+
+        if new_position < self.current_dir_contents.len() {
+            // Can move cursor directly right
+            self.cursor_positions[self.current_cursor_depth] = new_position;
+        } else if new_position < column_height * number_of_columns {
+            // Moving cursor into last column, but no entry directly right, so go to lowest entry in column instead
             self.cursor_positions[self.current_cursor_depth] = self.current_dir_contents.len() - 1;
         } else {
-            self.cursor_positions[self.current_cursor_depth] -= 1;
+            // Wrap arround from the last column to the first column
+            self.cursor_positions[self.current_cursor_depth] = new_position % number_of_columns;
+        }
+    }
+
+    fn move_cursor_left(&mut self, frame_size: Size) {
+        let column_height = frame_size.height.saturating_sub(3) as usize;
+        let number_of_columns = self
+            .current_dir_contents
+            .iter()
+            .len()
+            .div_ceil(column_height);
+
+        let new_position = self
+            .current_cursor_position()
+            .checked_sub(column_height)
+            .unwrap_or((number_of_columns - 1) * column_height + self.current_cursor_position());
+
+        if new_position >= self.current_dir_contents.len() {
+            // Wrapped around to last column, but no entry in last column at this row, so go to lowest entry instead
+            self.cursor_positions[self.current_cursor_depth] = self.current_dir_contents.len();
+        } else {
+            self.cursor_positions[self.current_cursor_depth] = new_position
         }
     }
 
@@ -242,7 +291,7 @@ mod test {
         let mut app = App::default();
         assert!(!app.exit);
 
-        app.handle_key_event(KeyCode::Char('q').into());
+        app.handle_key_event(KeyCode::Char('q').into(), Size::default());
         assert!(app.exit);
     }
 
@@ -255,17 +304,27 @@ mod test {
             ..Default::default()
         };
 
+        let frame_size = Size {
+            width: 1,
+            height: 6,
+        };
+
         assert_eq!(app.current_cursor_position(), 0);
 
-        app.handle_key_event(KeyCode::Down.into());
+        app.handle_key_event(KeyCode::Down.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 1);
 
-        app.handle_key_event(KeyCode::Up.into());
+        app.handle_key_event(KeyCode::Up.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 0);
     }
 
     #[test]
-    fn can_cursor_wraps_around() {
+    fn can_cursor_wraps_around_vertically() {
+        /*
+        Dir looks like this
+        a    c
+        b
+        */
         let mut app = App {
             current_dir_contents: vec![PathBuf::from("a"), PathBuf::from("b"), PathBuf::from("c")],
             current_dir_path: PathBuf::from("./"),
@@ -273,12 +332,46 @@ mod test {
             ..Default::default()
         };
 
+        let frame_size = Size {
+            width: 2,
+            height: 5,
+        };
+
         assert_eq!(app.current_cursor_position(), 0);
 
-        app.handle_key_event(KeyCode::Up.into());
+        app.handle_key_event(KeyCode::Up.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 2);
 
-        app.handle_key_event(KeyCode::Down.into());
+        app.handle_key_event(KeyCode::Down.into(), frame_size);
+        assert_eq!(app.current_cursor_position(), 0);
+    }
+
+    #[test]
+    fn can_cursor_wraps_around_horizontally() {
+        /*
+        Dir looks like this
+        a    c
+        b
+        */
+        let mut app = App {
+            current_dir_contents: vec![PathBuf::from("a"), PathBuf::from("b"), PathBuf::from("c")],
+            current_dir_path: PathBuf::from("./"),
+            cursor_positions: vec![0],
+            ..Default::default()
+        };
+
+        let frame_size = Size {
+            width: 2,
+            height: 5,
+        };
+
+        assert_eq!(app.current_cursor_position(), 0);
+
+        app.handle_key_event(KeyCode::Left.into(), frame_size);
+
+        assert_eq!(app.current_cursor_position(), 2);
+
+        app.handle_key_event(KeyCode::Right.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 0);
     }
 
@@ -293,6 +386,11 @@ mod test {
 
         let mut app = App::new(tmp_dir.path().to_path_buf());
 
+        let frame_size = Size {
+            width: 1,
+            height: 5,
+        };
+
         assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
         assert_eq!(
             app.current_dir_contents,
@@ -301,7 +399,7 @@ mod test {
         assert_eq!(app.current_cursor_position(), 0);
 
         // Current dir does not change when attempting to enter file
-        app.handle_key_event(KeyCode::Right.into());
+        app.handle_key_event(KeyCode::Enter.into(), frame_size);
         assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
         assert_eq!(
             app.current_dir_contents,
@@ -310,10 +408,10 @@ mod test {
         assert_eq!(app.current_cursor_position(), 0);
 
         // But does change if entering dir
-        app.handle_key_event(KeyCode::Down.into());
+        app.handle_key_event(KeyCode::Down.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 1);
         assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
-        app.handle_key_event(KeyCode::Right.into());
+        app.handle_key_event(KeyCode::Enter.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 0);
         assert_eq!(app.current_dir_path, nested_dir_path);
     }
@@ -332,6 +430,12 @@ mod test {
         let _nested_file_1 = File::create(&nested_file_path_1).unwrap();
 
         let mut app = App::new(nested_dir_path.clone());
+
+        let frame_size = Size {
+            width: 1,
+            height: 5,
+        };
+
         assert_eq!(app.current_dir_path, nested_dir_path);
         assert_eq!(
             app.current_dir_contents,
@@ -340,7 +444,7 @@ mod test {
         assert_eq!(app.current_cursor_position(), 0);
 
         // Go up a dir when left key pressed
-        app.handle_key_event(KeyCode::Down.into());
+        app.handle_key_event(KeyCode::Down.into(), frame_size);
         assert_eq!(app.current_dir_path, nested_dir_path);
         assert_eq!(
             app.current_dir_contents,
@@ -348,7 +452,7 @@ mod test {
         );
         assert_eq!(app.current_cursor_position(), 1);
 
-        app.handle_key_event(KeyCode::Left.into());
+        app.handle_key_event(KeyCode::Backspace.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 0);
         assert_eq!(
             app.current_dir_contents,
@@ -367,21 +471,26 @@ mod test {
 
         let mut app = App::new(tmp_dir.path().to_path_buf());
 
+        let frame_size = Size {
+            width: 1,
+            height: 5,
+        };
+
         assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
         assert_eq!(app.current_cursor_position(), 0);
 
         // Change cursor position to 1
-        app.handle_key_event(KeyCode::Down.into());
+        app.handle_key_event(KeyCode::Down.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 1);
         assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
 
         // Entering directory sets cursor position to 0, as this is the first time entering
-        app.handle_key_event(KeyCode::Right.into());
+        app.handle_key_event(KeyCode::Enter.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 0);
         assert_eq!(app.current_dir_path, nested_dir_path);
 
         // Exiting directory sets cursor position back to 1
-        app.handle_key_event(KeyCode::Left.into());
+        app.handle_key_event(KeyCode::Backspace.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 1);
         assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
     }
@@ -403,40 +512,45 @@ mod test {
 
         let mut app = App::new(tmp_dir.path().to_path_buf());
 
+        let frame_size = Size {
+            width: 1,
+            height: 5,
+        };
+
         assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
         assert_eq!(app.current_cursor_position(), 0);
 
         // Entering directory sets cursor position to 0, as this is the first time entering
-        app.handle_key_event(KeyCode::Right.into());
+        app.handle_key_event(KeyCode::Enter.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 0);
         assert_eq!(app.current_dir_path, nested_dir_path_0);
 
         // Can change this directories cursor position
-        app.handle_key_event(KeyCode::Down.into());
+        app.handle_key_event(KeyCode::Down.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 1);
 
         // Exiting directory sets cursor position back to 0
-        app.handle_key_event(KeyCode::Left.into());
+        app.handle_key_event(KeyCode::Backspace.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 0);
         assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
 
         // Move cursor to other directory
-        app.handle_key_event(KeyCode::Down.into());
+        app.handle_key_event(KeyCode::Down.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 1);
 
         // Go into this new directory
-        app.handle_key_event(KeyCode::Right.into());
+        app.handle_key_event(KeyCode::Enter.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 0);
         assert_eq!(app.current_dir_path, nested_dir_path_1);
 
         // Exiting directory again sets cursor position back to 1
-        app.handle_key_event(KeyCode::Left.into());
+        app.handle_key_event(KeyCode::Backspace.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 1);
         assert_eq!(app.current_dir_path, tmp_dir.path().to_path_buf());
 
         // Entering first sub directory and cursor position is 0
-        app.handle_key_event(KeyCode::Up.into());
-        app.handle_key_event(KeyCode::Right.into());
+        app.handle_key_event(KeyCode::Up.into(), frame_size);
+        app.handle_key_event(KeyCode::Enter.into(), frame_size);
         assert_eq!(app.current_cursor_position(), 0);
         assert_eq!(app.current_dir_path, nested_dir_path_0);
     }
