@@ -1,5 +1,9 @@
 use itertools::sorted;
-use std::{io, path::PathBuf};
+use std::{
+    fs::File,
+    io::{self, BufRead, BufReader},
+    path::PathBuf,
+};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -9,7 +13,7 @@ use ratatui::{
     style::Stylize,
     symbols::border,
     text::{Line, Text},
-    widgets::{Block, Paragraph, Widget},
+    widgets::{Block, Borders, Paragraph, Widget},
 };
 
 use super::directory_view::get_formatted_paths;
@@ -21,6 +25,7 @@ pub struct App {
     current_dir_contents: Vec<PathBuf>,
     cursor_positions: Vec<usize>,
     current_cursor_depth: usize,
+    view_file: bool,
 }
 
 impl App {
@@ -91,12 +96,23 @@ impl App {
             KeyCode::Backspace => {
                 self.go_out_of_dir();
             }
+            KeyCode::Char('c') if self.view_file || self.currently_on_file() => {
+                self.view_file();
+            }
             _ => {}
         }
     }
 
     fn currently_on_dir(&self) -> bool {
         self.current_dir_contents[self.current_cursor_position()].is_dir()
+    }
+
+    fn currently_on_file(&self) -> bool {
+        self.current_dir_contents[self.current_cursor_position()].is_file()
+    }
+
+    fn currently_selected_file(&self) -> &PathBuf {
+        &self.current_dir_contents[self.current_cursor_position()]
     }
 
     fn current_cursor_position(&self) -> usize {
@@ -113,6 +129,10 @@ impl App {
 
     fn exit(&mut self) {
         self.exit = true;
+    }
+
+    fn view_file(&mut self) {
+        self.view_file = !self.view_file;
     }
 
     fn move_cursor_up(&mut self) {
@@ -273,6 +293,55 @@ impl Widget for &App {
                     .left_aligned()
                     .render(*column_area, buf);
             }
+        }
+
+        if self.view_file {
+            let file_name = Line::from(
+                format!(
+                    " {} ",
+                    self.currently_selected_file()
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                )
+                .bold(),
+            );
+            let file_block = Block::bordered()
+                .title(file_name.centered())
+                .borders(Borders::LEFT)
+                .border_set(border::ROUNDED);
+
+            let frame_area = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(dir_contents_area);
+
+            let file_view_area = frame_area.get(1).unwrap();
+
+            let file_contents = {
+                if let Ok(file) = File::open(self.currently_selected_file()) {
+                    let reader = BufReader::new(file);
+                    let lines = reader.lines().take(column_height as usize).collect();
+                    if let Ok(lines) = lines {
+                        lines
+                    } else {
+                        vec!["Unable to read contents".to_string()]
+                    }
+                } else {
+                    vec!["Unable to read file".to_string()]
+                }
+            };
+
+            let formatted_file_contents: Vec<Line> = file_contents
+                .iter()
+                .map(|line| Line::from(line.as_ref()))
+                .collect();
+
+            Paragraph::new(Text::from(formatted_file_contents))
+                .left_aligned()
+                .block(file_block)
+                .render(*file_view_area, buf);
         }
     }
 }
