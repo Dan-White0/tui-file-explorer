@@ -252,8 +252,8 @@ impl Widget for &App {
         let dir_contents_area = Rect {
             x: area.x + 1,
             y: area.y + 2,
-            width: area.width,
-            height: column_height,
+            width: area.width - 1,
+            height: column_height - 2,
         };
 
         let column_widths: Vec<Constraint> = dir_contents_columns
