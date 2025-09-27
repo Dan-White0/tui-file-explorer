@@ -8,13 +8,11 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect, Size},
     style::Stylize,
     symbols::border,
-    text::{Line, Text},
-    widgets::{Block, Borders, Paragraph, Widget},
+    text::Line,
+    widgets::{Block, Clear, Paragraph, Widget},
 };
 
-use crate::components::file_view::get_formatted_file_contents;
-
-use super::directory_view::get_formatted_paths;
+use crate::components::{directory_view::DirectoryView, file_view::FileView};
 
 #[derive(Debug, Default)]
 pub struct App {
@@ -59,7 +57,52 @@ impl App {
     }
 
     fn draw(&self, frame: &mut Frame) {
-        frame.render_widget(self, frame.area());
+        let area = frame.area();
+        frame.render_widget(self, area);
+        let column_height = frame.area().height.saturating_sub(3);
+
+        let internal_area = Rect {
+            x: area.x + 1,
+            y: area.y + 2,
+            width: area.width - 1,
+            height: column_height,
+        };
+
+        let frame_area = if self.view_file {
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(internal_area)
+        } else {
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(100)])
+                .split(internal_area)
+        };
+
+        let dir_view_area = *frame_area.get(0).unwrap();
+
+        let (cursor_column_index, cursor_row_index) =
+            self.current_cursor_column_and_row(column_height as usize);
+        frame.render_widget(
+            &DirectoryView::new(
+                self.current_dir_contents.clone(),
+                cursor_column_index,
+                cursor_row_index,
+            ),
+            dir_view_area,
+        );
+
+        if self.view_file {
+            let file_view_area = *frame_area.get(1).unwrap();
+
+            frame.render_widget(Clear, file_view_area);
+
+            frame.render_widget(
+                &FileView::new(self.currently_selected_file(), column_height as usize),
+                file_view_area,
+            );
+        }
     }
 
     fn handle_events(&mut self, frame_size: Size) -> io::Result<()> {
@@ -220,13 +263,6 @@ impl App {
         )
         .collect();
     }
-
-    fn get_dir_contents_as_columns(&self, column_height: u16) -> Vec<Vec<PathBuf>> {
-        self.current_dir_contents
-            .chunks(column_height as usize)
-            .map(|chunk| chunk.to_vec())
-            .collect()
-    }
 }
 
 impl Widget for &App {
@@ -242,94 +278,6 @@ impl Widget for &App {
             .left_aligned()
             .block(block)
             .render(area, buf);
-
-        // Height of window, take away 2 for the border and 1 for the current dir
-        let column_height = area.height.saturating_sub(3);
-        let dir_contents_columns = self.get_dir_contents_as_columns(column_height);
-
-        let dir_contents_area = Rect {
-            x: area.x + 1,
-            y: area.y + 2,
-            width: area.width - 1,
-            height: column_height,
-        };
-
-        let column_widths: Vec<Constraint> = dir_contents_columns
-            .iter()
-            .map(|column| {
-                Constraint::Length(
-                    (column
-                        .iter()
-                        .map(|e| e.file_name().unwrap().to_str().unwrap().len())
-                        .max()
-                        .unwrap()
-                        + 8) as u16,
-                )
-            })
-            .collect();
-
-        let columns = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(column_widths)
-            .split(dir_contents_area);
-
-        let (cursor_column_index, cursor_row_index) =
-            self.current_cursor_column_and_row(column_height as usize);
-
-        for (column_index, (column_area, column_contents)) in
-            columns.iter().zip(dir_contents_columns.iter()).enumerate()
-        {
-            if column_index == cursor_column_index {
-                Paragraph::new(Text::from(get_formatted_paths(
-                    column_contents,
-                    Some(cursor_row_index),
-                )))
-                .left_aligned()
-                .render(*column_area, buf);
-            } else {
-                Paragraph::new(Text::from(get_formatted_paths(column_contents, None)))
-                    .left_aligned()
-                    .render(*column_area, buf);
-            }
-        }
-
-        if self.view_file {
-            let file_name = Line::from(
-                format!(
-                    " {} ",
-                    self.currently_selected_file()
-                        .file_name()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                )
-                .bold(),
-            );
-            let file_block = Block::bordered()
-                .title(file_name.centered())
-                .borders(Borders::LEFT)
-                .border_set(border::ROUNDED);
-
-            let frame_area = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(dir_contents_area);
-
-            let file_view_area = frame_area.get(1).unwrap();
-
-            let file_contents =
-                get_formatted_file_contents(self.currently_selected_file(), column_height as usize);
-
-            let formatted_file_contents: Vec<Line> = file_contents
-                .iter()
-                .map(|line| Line::from(line.as_ref()))
-                .collect();
-
-            Paragraph::new(Text::from(formatted_file_contents))
-                .left_aligned()
-                .block(file_block)
-                .render(*file_view_area, buf);
-        }
     }
 }
 
