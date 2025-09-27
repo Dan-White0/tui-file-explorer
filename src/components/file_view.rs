@@ -64,7 +64,7 @@ impl Widget for &FileView {
                     .nth(area.width as usize)
                     .unwrap_or((line.len(), 'a'));
                 let cropped_line = &line[..max_showable_character_index];
-                Line::from(cropped_line.as_ref())
+                Line::from(cropped_line)
             })
             .collect();
 

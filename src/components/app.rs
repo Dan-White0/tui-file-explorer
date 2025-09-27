@@ -80,7 +80,7 @@ impl App {
                 .split(internal_area)
         };
 
-        let dir_view_area = *frame_area.get(0).unwrap();
+        let dir_view_area = *frame_area.first().unwrap();
 
         let (cursor_column_index, cursor_row_index) =
             self.current_cursor_column_and_row(column_height as usize);
