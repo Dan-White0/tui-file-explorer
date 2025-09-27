@@ -122,6 +122,12 @@ fn format_path_with_cursor(entity: &Path, with_cursor: bool) -> Line<'static> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::{File, create_dir};
+
+    use itertools::sorted;
+    use ratatui::style::Style;
+    use tempdir::TempDir;
+
     use super::*;
 
     #[test]
@@ -173,5 +179,81 @@ mod tests {
             ),
             [Line::from("  file_1.txt"), Line::from("> file_2.txt")]
         )
+    }
+
+    #[test]
+    fn default_render_single_column() {
+        // TODO: Make this test nicer
+        let tmp_dir = TempDir::new("tmp_dir").unwrap();
+        let nested_dir_path =
+            PathBuf::from(format!("{}/nested_dir", tmp_dir.path().to_str().unwrap()));
+        let _nested_dir = create_dir(&nested_dir_path);
+        let file_path = tmp_dir.path().join("file.txt");
+        let _tmp_file = File::create(&file_path).unwrap();
+
+        let directory_contents = sorted(std::fs::read_dir(&tmp_dir).unwrap().filter_map(
+            |maybe_dir_entry| {
+                let dir_entry = maybe_dir_entry.ok()?;
+                Some(dir_entry.path())
+            },
+        ))
+        .collect();
+
+        let directory_view = DirectoryView::new(directory_contents, 0, 0);
+
+        let mut buf = Buffer::empty(Rect::new(0, 0, 81, 3));
+
+        directory_view.render(buf.area, &mut buf);
+
+        let mut expected = Buffer::with_lines(vec![
+            "> file.txt                                                                       ",
+            "  nested_dir                                                                     ",
+            "                                                                                 ",
+        ]);
+        let file_style = Style::new().yellow();
+        let dir_style = Style::new().blue();
+
+        expected.set_style(Rect::new(0, 0, 10, 1), file_style);
+        expected.set_style(Rect::new(0, 1, 12, 1), dir_style);
+
+        assert_eq!(buf, expected);
+    }
+
+    #[test]
+    fn default_render_multiple_columns() {
+        let tmp_dir = TempDir::new("tmp_dir").unwrap();
+        let nested_dir_path =
+            PathBuf::from(format!("{}/nested_dir", tmp_dir.path().to_str().unwrap()));
+        let _nested_dir = create_dir(&nested_dir_path);
+        let file_path_0 = tmp_dir.path().join("file.txt");
+        let _tmp_file_0 = File::create(&file_path_0).unwrap();
+        let file_path_1 = tmp_dir.path().join("zzz.txt");
+        let _tmp_file = File::create(&file_path_1).unwrap();
+        let directory_contents = sorted(std::fs::read_dir(&tmp_dir).unwrap().filter_map(
+            |maybe_dir_entry| {
+                let dir_entry = maybe_dir_entry.ok()?;
+                Some(dir_entry.path())
+            },
+        ))
+        .collect();
+
+        let directory_view = DirectoryView::new(directory_contents, 0, 0);
+
+        let mut buf = Buffer::empty(Rect::new(0, 0, 81, 2));
+
+        directory_view.render(buf.area, &mut buf);
+
+        let mut expected = Buffer::with_lines(vec![
+            "> file.txt          zzz.txt                                                      ",
+            "  nested_dir                                                                     ",
+        ]);
+        let file_style = Style::new().yellow();
+        let dir_style = Style::new().blue();
+
+        expected.set_style(Rect::new(0, 0, 10, 1), file_style);
+        expected.set_style(Rect::new(18, 0, 9, 1), file_style);
+        expected.set_style(Rect::new(0, 1, 12, 1), dir_style);
+
+        assert_eq!(buf, expected);
     }
 }
