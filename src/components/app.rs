@@ -1,9 +1,5 @@
 use itertools::sorted;
-use std::{
-    fs::File,
-    io::{self, BufRead, BufReader},
-    path::PathBuf,
-};
+use std::{io, path::PathBuf};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -15,6 +11,8 @@ use ratatui::{
     text::{Line, Text},
     widgets::{Block, Borders, Paragraph, Widget},
 };
+
+use crate::components::file_view::get_formatted_file_contents;
 
 use super::directory_view::get_formatted_paths;
 
@@ -319,19 +317,8 @@ impl Widget for &App {
 
             let file_view_area = frame_area.get(1).unwrap();
 
-            let file_contents = {
-                if let Ok(file) = File::open(self.currently_selected_file()) {
-                    let reader = BufReader::new(file);
-                    let lines = reader.lines().take(column_height as usize).collect();
-                    if let Ok(lines) = lines {
-                        lines
-                    } else {
-                        vec!["Unable to read contents".to_string()]
-                    }
-                } else {
-                    vec!["Unable to read file".to_string()]
-                }
-            };
+            let file_contents =
+                get_formatted_file_contents(self.currently_selected_file(), column_height as usize);
 
             let formatted_file_contents: Vec<Line> = file_contents
                 .iter()
